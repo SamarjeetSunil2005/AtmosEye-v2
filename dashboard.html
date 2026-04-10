@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en" class="antialiased" x-data="atmosEyeApp()" x-init="init()" :class="{ 'dark': isDarkMode }">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AtmosEye | Pro Dashboard</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+
+<script>
+    tailwind.config = {
+        darkMode: 'class',
+        theme: { extend: { colors: { slate: { 850: '#151f32' } } } }
+    }
+</script>
+
+<style>
+:root { --bg: #eef1f5; --light: #ffffff; --dark: #cbd5e1; --border-color: rgba(0,0,0,0.06); --accent: #0d9488; }
+.dark { --bg: #020617; --light: #1e293b; --dark: #000000; --border-color: rgba(255,255,255,0.12); --accent: #2dd4bf; }
+
+body { background:var(--bg); font-family:'Inter', sans-serif; color:#1e293b; transition: background 0.8s ease; overflow-x: hidden; }
+.dark body { color:#f1f5f9; }
+
+.neo { background: linear-gradient(145deg, #ffffff, #e6e9ee); box-shadow: 12px 12px 24px var(--dark), -12px -12px 24px var(--light); border-radius: 3rem; border: 1px solid var(--border-color); transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+.dark .neo { background: #0f172a; box-shadow: 15px 15px 35px #000000, -5px -5px 25px rgba(30, 41, 59, 0.5); border: 1px solid rgba(255, 255, 255, 0.08); }
+
+.neo-in { border-radius:2rem; box-shadow: inset 6px 6px 12px var(--dark), inset -6px -6px 12px var(--light); border: 1px solid rgba(0,0,0,0.03); transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.dark .neo-in { background: #1e293b; box-shadow: inset 4px 4px 10px #000000, inset -2px -2px 8px rgba(255,255,255,0.02); border: 1px solid rgba(255, 255, 255, 0.05); }
+
+.h1-zenith { font-weight:900; font-size:clamp(1.875rem, 4vw, 2.5rem); letter-spacing: -0.04em; }
+.h2-zenith { font-weight:800; font-size:clamp(1.5rem, 3vw, 2rem); letter-spacing: -0.02em; }
+.section-header { font-family:'JetBrains Mono',monospace; font-size: 1.125rem; letter-spacing: 0.15em; text-transform: uppercase; font-weight: 800; }
+.label { font-family:'JetBrains Mono',monospace; font-size:.65rem; letter-spacing:.25em; text-transform:uppercase; opacity:.7; font-weight:700; }
+.tabular { font-family:'Inter', sans-serif; font-variant-numeric: tabular-nums; }
+
+.tint-good { background: #ccfbf1 !important; }
+.tint-warn { background: #fef3c7 !important; }
+.tint-bad  { background: #fee2e2 !important; }
+.dark .tint-good { background: rgba(20, 184, 166, 0.15) !important; }
+.dark .tint-warn { background: rgba(245, 158, 11, 0.15) !important; }
+.dark .tint-bad  { background: rgba(239, 68, 68, 0.15) !important; }
+
+.zenith-pulse::after { content:''; display:block; height:.4rem; margin-top:.6rem; border-radius:.4rem; background:currentColor; opacity:.25; animation:pulse 4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:.2} 50%{opacity:.45} }
+
+.sun-moon-svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sun-beams { transition: opacity 0.4s ease, transform 0.4s ease; }
+.dark .sun-beams { opacity: 0; transform: rotate(45deg); }
+.moon-mask { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+.dark .moon-mask { transform: translateX(-8px) translateY(-2px); }
+
+.refresh-spin { animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.soft-fade-in { animation: softFade 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes softFade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+[x-cloak] { display: none !important; }
+
+.custom-scroll::-webkit-scrollbar { width: 4px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+.status-badge { @apply px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wider; }
+.status-good { @apply bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20; }
+.status-warn { @apply bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20; }
+.status-error { @apply bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20; }
+
+.mini-graph-container { position: relative; overflow: hidden; border-radius: 0.5rem; }
+.graph-line { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke 0.5s ease; }
+
+.radial-progress { transform: rotate(-90deg); transform-origin: center; }
+.radial-track { fill: none; stroke: currentColor; opacity: 0.1; stroke-width: 8; }
+.radial-bar { fill: none; stroke: currentColor; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1); }
+
+.neo-range { -webkit-appearance: none; width: 100%; height: 8px; border-radius: 4px; background: rgba(0,0,0,0.05); outline: none; transition: opacity .2s; }
+.dark .neo-range { background: rgba(255,255,255,0.1); }
+.neo-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+.neo-range::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+
+/* Smooth Page Entry Animation from Landing */
+body { animation: appFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes appFadeIn {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
+}
+</style>
+</head>
+
+<body class="p-4 sm:p-6 lg:p-10 min-h-screen">
+
+<div x-show="showDetailedGraphs" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 backdrop-blur-none" x-transition:enter-end="opacity-100 backdrop-blur-sm" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 backdrop-blur-sm" x-transition:leave-end="opacity-0 backdrop-blur-none" class="fixed inset-0 z-[100] bg-black/40 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8" x-cloak>
+    <div @click.away="showDetailedGraphs = false" class="neo w-full max-w-5xl max-h-[95vh] h-full sm:h-[90vh] flex flex-col overflow-hidden bg-white/95 dark:bg-slate-900/95" x-transition:enter="transition ease-out duration-300 transform" x-transition:enter-start="opacity-0 translate-y-8 scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100" x-transition:leave="transition ease-in duration-200 transform" x-transition:leave-start="opacity-100 translate-y-0 scale-100" x-transition:leave-end="opacity-0 translate-y-8 scale-95">
+        <div class="p-4 sm:p-6 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-black/20">
+            <div><h2 class="section-header text-teal-600 dark:text-teal-400">Live Telemetry</h2><p class="label text-[10px] mt-1">Live Rolling Data Buffer (120 Seconds)</p></div>
+            <button @click="showDetailedGraphs = false" class="neo-in w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center font-bold hover:bg-red-500 hover:text-white transition-colors text-xl">×</button>
+        </div>
+        <div class="flex-grow overflow-y-auto custom-scroll p-4 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="label text-xs">PM2.5 Concentration</span>
+                        <p class="text-3xl sm:text-4xl font-black tabular text-teal-500 mt-1 sm:mt-2">
+                            <span x-text="Math.round(history.pm25[history.pm25.length-1])"></span>
+                            <span class="text-xs opacity-50 font-bold tracking-widest uppercase">µg/m³</span>
+                        </p>
+                    </div>
+                    <div class="text-right flex flex-col gap-1 text-[10px] sm:text-xs font-mono opacity-80 bg-black/5 dark:bg-white/5 p-2 sm:p-3 rounded-xl border border-black/5 dark:border-white/5 shadow-inner">
+                        <span class="text-red-500 font-bold" x-text="'Max: ' + Math.max(...history.pm25).toFixed(1)"></span>
+                        <span class="text-yellow-600 dark:text-yellow-400" x-text="'Avg: ' + (history.pm25.reduce((a,b)=>a+b,0)/history.pm25.length).toFixed(1)"></span>
+                        <span class="text-teal-600 dark:text-teal-400 font-bold" x-text="'Min: ' + Math.min(...history.pm25).toFixed(1)"></span>
+                    </div>
+                </div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDetailSvg(history.pm25)" fill="none" stroke="#14b8a6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1"><span>-2 Minutes</span><span>Live Now</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="label text-xs">Temperature</span>
+                        <p class="text-3xl sm:text-4xl font-black tabular text-orange-500 mt-1 sm:mt-2">
+                            <span x-text="history.temp[history.temp.length-1].toFixed(1)"></span>
+                            <span class="text-xs opacity-50 font-bold tracking-widest uppercase">°C</span>
+                        </p>
+                    </div>
+                    <div class="text-right flex flex-col gap-1 text-[10px] sm:text-xs font-mono opacity-80 bg-black/5 dark:bg-white/5 p-2 sm:p-3 rounded-xl border border-black/5 dark:border-white/5 shadow-inner">
+                        <span class="text-red-500 font-bold" x-text="'Max: ' + Math.max(...history.temp).toFixed(1)"></span>
+                        <span class="text-yellow-600 dark:text-yellow-400" x-text="'Avg: ' + (history.temp.reduce((a,b)=>a+b,0)/history.temp.length).toFixed(1)"></span>
+                        <span class="text-teal-600 dark:text-teal-400 font-bold" x-text="'Min: ' + Math.min(...history.temp).toFixed(1)"></span>
+                    </div>
+                </div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDetailSvg(history.temp)" fill="none" stroke="#f97316" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1"><span>-2 Minutes</span><span>Live Now</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="label text-xs">Humidity</span>
+                        <p class="text-3xl sm:text-4xl font-black tabular text-blue-500 mt-1 sm:mt-2">
+                            <span x-text="history.hum[history.hum.length-1].toFixed(1)"></span>
+                            <span class="text-xs opacity-50 font-bold tracking-widest uppercase">%</span>
+                        </p>
+                    </div>
+                    <div class="text-right flex flex-col gap-1 text-[10px] sm:text-xs font-mono opacity-80 bg-black/5 dark:bg-white/5 p-2 sm:p-3 rounded-xl border border-black/5 dark:border-white/5 shadow-inner">
+                        <span class="text-red-500 font-bold" x-text="'Max: ' + Math.max(...history.hum).toFixed(1)"></span>
+                        <span class="text-yellow-600 dark:text-yellow-400" x-text="'Avg: ' + (history.hum.reduce((a,b)=>a+b,0)/history.hum.length).toFixed(1)"></span>
+                        <span class="text-teal-600 dark:text-teal-400 font-bold" x-text="'Min: ' + Math.min(...history.hum).toFixed(1)"></span>
+                    </div>
+                </div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDetailSvg(history.hum)" fill="none" stroke="#3b82f6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1"><span>-2 Minutes</span><span>Live Now</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="label text-xs">Gas Resistance</span>
+                        <p class="text-3xl sm:text-4xl font-black tabular text-indigo-500 mt-1 sm:mt-2">
+                            <span x-text="history.gas[history.gas.length-1].toFixed(1)"></span>
+                            <span class="text-xs opacity-50 font-bold tracking-widest uppercase">kΩ</span>
+                        </p>
+                    </div>
+                    <div class="text-right flex flex-col gap-1 text-[10px] sm:text-xs font-mono opacity-80 bg-black/5 dark:bg-white/5 p-2 sm:p-3 rounded-xl border border-black/5 dark:border-white/5 shadow-inner">
+                        <span class="text-red-500 font-bold" x-text="'Max: ' + Math.max(...history.gas).toFixed(1)"></span>
+                        <span class="text-yellow-600 dark:text-yellow-400" x-text="'Avg: ' + (history.gas.reduce((a,b)=>a+b,0)/history.gas.length).toFixed(1)"></span>
+                        <span class="text-teal-600 dark:text-teal-400 font-bold" x-text="'Min: ' + Math.min(...history.gas).toFixed(1)"></span>
+                    </div>
+                </div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDetailSvg(history.gas)" fill="none" stroke="#6366f1" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1"><span>-2 Minutes</span><span>Live Now</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div x-show="showHistoricalGraphs" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 backdrop-blur-none" x-transition:enter-end="opacity-100 backdrop-blur-sm" x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100 backdrop-blur-sm" x-transition:leave-end="opacity-0 backdrop-blur-none" class="fixed inset-0 z-[100] bg-black/40 dark:bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8" x-cloak>
+    <div @click.away="showHistoricalGraphs = false" class="neo w-full max-w-5xl max-h-[95vh] h-full sm:h-[90vh] flex flex-col overflow-hidden bg-white/95 dark:bg-slate-900/95" x-transition:enter="transition ease-out duration-300 transform" x-transition:enter-start="opacity-0 translate-y-8 scale-95" x-transition:enter-end="opacity-100 translate-y-0 scale-100" x-transition:leave="transition ease-in duration-200 transform" x-transition:leave-start="opacity-100 translate-y-0 scale-100" x-transition:leave-end="opacity-0 translate-y-8 scale-95">
+        <div class="p-4 sm:p-6 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-white/50 dark:bg-black/20">
+            <div><h2 class="section-header text-teal-600 dark:text-teal-400">Historical Telemetry</h2><p class="label text-[10px] mt-1" x-text="`Full 24-Hour Timeline for ${selectedYear}-${selectedMonth}-${selectedDay}`"></p></div>
+            <button @click="showHistoricalGraphs = false" class="neo-in w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center font-bold hover:bg-red-500 hover:text-white transition-colors text-xl">×</button>
+        </div>
+        <div class="flex-grow overflow-y-auto custom-scroll p-4 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-end mb-2"><span class="label text-xs">AQI Rating</span><span class="text-3xl font-black tabular text-teal-500">24h <span class="text-xs opacity-50 font-bold tracking-widest">Trend</span></span></div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1 cursor-crosshair" @mousemove="handleHover($event, dailyGraphData.aqi, 'aqi')" @mouseleave="showHover = false; hoverGraph = null">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible">
+                        <polyline :points="generateDailySvg(dailyGraphData.aqi)" fill="none" stroke="#14b8a6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="0" y1="0" x2="0" y2="40" class="transition-all duration-75" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1" x-show="showHover && hoverGraph === 'aqi'" :transform="`translate(${hoverPct}, 0)`" />
+                        <circle r="1.5" fill="#14b8a6" class="transition-all duration-75" x-show="showHover && hoverGraph === 'aqi'" :cx="hoverPct" :cy="getHoverY(dailyGraphData.aqi)" />
+                    </svg>
+                    <div x-show="showHover && hoverGraph === 'aqi'" class="absolute top-0 transform -translate-x-1/2 -translate-y-[110%] bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-2 py-1 rounded shadow-lg pointer-events-none z-20 flex flex-col items-center transition-all duration-75 min-w-[40px]" :style="`left: ${hoverPct}%`">
+                        <span class="text-xs font-black tabular leading-none" x-text="dailyGraphData.aqi[hoverIndex]?.y.toFixed(0)"></span>
+                        <span class="text-[9px] opacity-70 font-mono mt-1 leading-none" x-text="formatHoverTime(hoverPct)"></span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-mono opacity-70 pt-2"><span class="text-teal-600 font-bold" x-text="'Min: ' + historicalStats.aqi.min.toFixed(0)"></span><span class="text-red-500 font-bold" x-text="'Max: ' + historicalStats.aqi.max.toFixed(0)"></span></div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1 border-t border-black/5 dark:border-white/5"><span>00:00</span><span>12:00</span><span>23:59</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-end mb-2"><span class="label text-xs">PM2.5 Conc.</span><span class="text-3xl font-black tabular text-teal-500">24h <span class="text-xs opacity-50 font-bold tracking-widest">µg/m³</span></span></div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1 cursor-crosshair" @mousemove="handleHover($event, dailyGraphData.pm25, 'pm25')" @mouseleave="showHover = false; hoverGraph = null">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible">
+                        <polyline :points="generateDailySvg(dailyGraphData.pm25)" fill="none" stroke="#14b8a6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="0" y1="0" x2="0" y2="40" class="transition-all duration-75" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1" x-show="showHover && hoverGraph === 'pm25'" :transform="`translate(${hoverPct}, 0)`" />
+                        <circle r="1.5" fill="#14b8a6" class="transition-all duration-75" x-show="showHover && hoverGraph === 'pm25'" :cx="hoverPct" :cy="getHoverY(dailyGraphData.pm25)" />
+                    </svg>
+                    <div x-show="showHover && hoverGraph === 'pm25'" class="absolute top-0 transform -translate-x-1/2 -translate-y-[110%] bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-2 py-1 rounded shadow-lg pointer-events-none z-20 flex flex-col items-center transition-all duration-75 min-w-[40px]" :style="`left: ${hoverPct}%`">
+                        <span class="text-xs font-black tabular leading-none" x-text="dailyGraphData.pm25[hoverIndex]?.y.toFixed(1)"></span>
+                        <span class="text-[9px] opacity-70 font-mono mt-1 leading-none" x-text="formatHoverTime(hoverPct)"></span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-mono opacity-70 pt-2"><span class="text-teal-600 font-bold" x-text="'Min: ' + historicalStats.pm25.min.toFixed(1)"></span><span class="text-red-500 font-bold" x-text="'Max: ' + historicalStats.pm25.max.toFixed(1)"></span></div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1 border-t border-black/5 dark:border-white/5"><span>00:00</span><span>12:00</span><span>23:59</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-end mb-2"><span class="label text-xs">Temperature</span><span class="text-3xl font-black tabular text-orange-500">24h <span class="text-xs opacity-50 font-bold tracking-widest">°C</span></span></div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1 cursor-crosshair" @mousemove="handleHover($event, dailyGraphData.temp, 'temp')" @mouseleave="showHover = false; hoverGraph = null">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible">
+                        <polyline :points="generateDailySvg(dailyGraphData.temp)" fill="none" stroke="#f97316" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="0" y1="0" x2="0" y2="40" class="transition-all duration-75" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1" x-show="showHover && hoverGraph === 'temp'" :transform="`translate(${hoverPct}, 0)`" />
+                        <circle r="1.5" fill="#f97316" class="transition-all duration-75" x-show="showHover && hoverGraph === 'temp'" :cx="hoverPct" :cy="getHoverY(dailyGraphData.temp)" />
+                    </svg>
+                    <div x-show="showHover && hoverGraph === 'temp'" class="absolute top-0 transform -translate-x-1/2 -translate-y-[110%] bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-2 py-1 rounded shadow-lg pointer-events-none z-20 flex flex-col items-center transition-all duration-75 min-w-[40px]" :style="`left: ${hoverPct}%`">
+                        <span class="text-xs font-black tabular leading-none" x-text="dailyGraphData.temp[hoverIndex]?.y.toFixed(1)"></span>
+                        <span class="text-[9px] opacity-70 font-mono mt-1 leading-none" x-text="formatHoverTime(hoverPct)"></span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-mono opacity-70 pt-2"><span class="text-teal-600 font-bold" x-text="'Min: ' + historicalStats.temp.min.toFixed(1)"></span><span class="text-red-500 font-bold" x-text="'Max: ' + historicalStats.temp.max.toFixed(1)"></span></div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1 border-t border-black/5 dark:border-white/5"><span>00:00</span><span>12:00</span><span>23:59</span></div>
+            </div>
+
+            <div class="neo-in p-4 flex flex-col space-y-2 relative group">
+                <div class="flex justify-between items-end mb-2"><span class="label text-xs">Humidity</span><span class="text-3xl font-black tabular text-blue-500">24h <span class="text-xs opacity-50 font-bold tracking-widest">%</span></span></div>
+                <div class="w-full h-24 sm:h-28 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1 cursor-crosshair" @mousemove="handleHover($event, dailyGraphData.hum, 'hum')" @mouseleave="showHover = false; hoverGraph = null">
+                    <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible">
+                        <polyline :points="generateDailySvg(dailyGraphData.hum)" fill="none" stroke="#3b82f6" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <line x1="0" y1="0" x2="0" y2="40" class="transition-all duration-75" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1" x-show="showHover && hoverGraph === 'hum'" :transform="`translate(${hoverPct}, 0)`" />
+                        <circle r="1.5" fill="#3b82f6" class="transition-all duration-75" x-show="showHover && hoverGraph === 'hum'" :cx="hoverPct" :cy="getHoverY(dailyGraphData.hum)" />
+                    </svg>
+                    <div x-show="showHover && hoverGraph === 'hum'" class="absolute top-0 transform -translate-x-1/2 -translate-y-[110%] bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-2 py-1 rounded shadow-lg pointer-events-none z-20 flex flex-col items-center transition-all duration-75 min-w-[40px]" :style="`left: ${hoverPct}%`">
+                        <span class="text-xs font-black tabular leading-none" x-text="dailyGraphData.hum[hoverIndex]?.y.toFixed(1)"></span>
+                        <span class="text-[9px] opacity-70 font-mono mt-1 leading-none" x-text="formatHoverTime(hoverPct)"></span>
+                    </div>
+                </div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-mono opacity-70 pt-2"><span class="text-teal-600 font-bold" x-text="'Min: ' + historicalStats.hum.min.toFixed(1)"></span><span class="text-red-500 font-bold" x-text="'Max: ' + historicalStats.hum.max.toFixed(1)"></span></div>
+                <div class="flex justify-between text-[10px] sm:text-xs font-bold opacity-40 uppercase tracking-wider pt-1 border-t border-black/5 dark:border-white/5"><span>00:00</span><span>12:00</span><span>23:59</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div x-show="!connected" x-transition class="fixed top-0 left-0 w-full bg-red-600 text-white text-xs font-bold text-center py-2 z-50 uppercase tracking-widest">
+    System Offline - Connecting to Engine...
+</div>
+
+<div class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+    <template x-for="toast in toasts" :key="toast.id">
+        <div class="pointer-events-auto bg-white dark:bg-slate-800 text-slate-800 dark:text-white px-6 py-4 rounded-2xl shadow-2xl border border-black/5 dark:border-white/10 flex items-center gap-4 soft-fade-in">
+            <div class="w-2 h-2 rounded-full" :class="toast.type === 'error' ? 'bg-red-500' : 'bg-teal-500'"></div>
+            <div class="flex flex-col">
+                <span class="text-xs font-black uppercase tracking-wider opacity-50" x-text="toast.title"></span>
+                <span class="text-sm font-bold" x-text="toast.message"></span>
+            </div>
+        </div>
+    </template>
+</div>
+
+<div x-show="menuOpen" x-cloak x-transition:opacity.duration.700ms class="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" @click="menuOpen = false"></div>
+
+<aside x-show="menuOpen" x-cloak
+       x-transition:enter="transition transform duration-700 cubic-bezier(0.22, 1, 0.36, 1)"
+       x-transition:enter-start="translate-x-full"
+       x-transition:enter-end="translate-x-0"
+       x-transition:leave="transition transform duration-500 cubic-bezier(0.22, 1, 0.36, 1)"
+       x-transition:leave-start="translate-x-0"
+       x-transition:leave-end="translate-x-full"
+       class="fixed right-0 top-0 h-full w-full sm:w-[400px] z-50 neo p-8 flex flex-col !rounded-none !rounded-l-[3rem] overflow-y-auto">
+
+    <button @click="activePanel === 'main' ? menuOpen = false : activePanel = 'main'" class="w-12 h-12 mb-8 neo-in flex items-center justify-center font-bold transition-transform hover:scale-105">
+        <span x-text="activePanel === 'main' ? '×' : '←'"></span>
+    </button>
+
+    <div x-show="activePanel === 'main'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100">
+        <div class="mb-8">
+            <h2 class="h1-zenith uppercase">AtmosEye</h2>
+            <p class="label mt-1 text-teal-600 dark:text-teal-400">System Menu</p>
+        </div>
+
+        <nav class="space-y-4">
+            <button @click="activePanel = 'settings'" class="w-full text-left p-6 neo-in font-bold flex justify-between group transform-gpu active:scale-95 transition-all hover:bg-white/50 dark:hover:bg-black/20">
+                Settings <span class="group-hover:translate-x-1 transition-transform opacity-30">⚙</span>
+            </button>
+            <button @click="activePanel = 'notifications'" class="w-full text-left p-6 neo-in font-bold flex justify-between group transform-gpu active:scale-95 transition-all hover:bg-white/50 dark:hover:bg-black/20">
+                Notifications & Alerts <span class="group-hover:translate-x-1 transition-transform opacity-30">🔔</span>
+            </button>
+            <button @click="fetchLogs(); activePanel = 'logs'" class="w-full text-left p-6 neo-in font-bold flex justify-between group transform-gpu active:scale-95 transition-all hover:bg-white/50 dark:hover:bg-black/20">
+                AtmosLog Manager <span class="group-hover:translate-x-1 transition-transform opacity-30">📊</span>
+            </button>
+            <button @click="refreshSystemInfo(); activePanel = 'systemInfo'" class="w-full text-left p-6 neo-in font-bold flex justify-between group transform-gpu active:scale-95 transition-all hover:bg-white/50 dark:hover:bg-black/20">
+                System Information <span class="group-hover:translate-x-1 transition-transform opacity-30">💻</span>
+            </button>
+
+            <div class="pt-4 border-t border-black/5 dark:border-white/5 mt-4">
+              <button @click="toggleDark()" class="w-full text-left p-4 neo-in font-bold flex justify-between items-center group hover:bg-white/50 dark:hover:bg-black/20">
+                  Appearance
+                  <div class="theme-toggle-container">
+                    <svg viewBox="0 0 24 24" class="sun-moon-svg"><mask id="moon-mask-sidebar"><rect x="0" y="0" width="100%" height="100%" fill="white" /><circle class="moon-mask" cx="24" cy="10" r="6" fill="black" /></mask><circle cx="12" cy="12" r="5" fill="currentColor" mask="url(#moon-mask-sidebar)" /><g class="sun-beams"><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></g></svg>
+                  </div>
+              </button>
+            </div>
+        </nav>
+         <div class="mt-8 p-6 neo-in">
+            <p class="label mb-2">Tunnel Status</p>
+            <div class="flex flex-col gap-2">
+                <button @click="toggleTunnel()" class="w-full py-3 rounded-xl font-bold uppercase text-xs transition-all" :class="tunnel.enabled ? 'bg-red-500 text-white shadow-lg' : 'bg-teal-500 text-white shadow-lg'" x-text="tunnel.enabled ? 'Stop Remote Access' : 'Enable Remote Access'"></button>
+                <div x-show="tunnel.enabled" class="mt-2" x-transition>
+                    <p class="label mb-1">Public URL</p>
+                    <input readonly :value="tunnel.url" @click="$el.select(); document.execCommand('copy'); addToast('Copied', 'URL copied to clipboard')" class="w-full bg-transparent text-xs font-mono p-2 border border-dashed border-black/20 dark:border-white/20 rounded select-all cursor-pointer hover:border-teal-500">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template x-if="activePanel === 'settings'">
+        <div class="space-y-6 transform-gpu" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+            <h3 class="section-header">Settings</h3>
+            <div class="neo-in p-6 space-y-6">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold">Temperature Unit</span>
+                    <button @click="useFahrenheit = !useFahrenheit" class="px-5 py-2 neo-in text-xs font-black transition-colors" :class="useFahrenheit ? 'text-teal-500 bg-teal-500/10' : ''" x-text="useFahrenheit ? '°F' : '°C'"></button>
+                </div>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between"><span class="text-sm font-bold">AQI Alert Threshold</span></div>
+                    <div>
+                        <div class="flex justify-between items-end mb-2">
+                            <p class="label text-[10px] opacity-40">Sensitivity Limit</p>
+                            <p class="text-xl font-black tabular text-teal-500" x-text="config.alert_threshold"></p>
+                        </div>
+                        <input type="range" min="50" max="500" x-model="config.alert_threshold" @change="saveConfig()" class="neo-range">
+                        <div class="flex justify-between text-[8px] font-black opacity-30 uppercase mt-2"><span>Sensitive</span><span>Hazardous</span></div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <p class="font-bold">Insight Summary Tone</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <template x-for="t in ['Scientific', 'Friendly', 'Professional']">
+                            <button @click="settings.tone = t.toLowerCase(); refreshSummary();" class="p-2 text-[10px] rounded-xl neo-in font-bold uppercase transition-all" :class="settings.tone === t.toLowerCase() ? 'bg-teal-500/20 text-teal-600 ring-2 ring-teal-500/50' : ''" x-text="t"></button>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="space-y-4 pt-4 border-t border-black/10 dark:border-white/10">
+                    <p class="font-bold">Location Coordinates (Outdoor API)</p>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="neo-in p-1">
+                            <input type="text" x-model="config.latitude" @change="saveConfig()" placeholder="Latitude" class="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:opacity-30 tabular">
+                        </div>
+                        <div class="neo-in p-1">
+                            <input type="text" x-model="config.longitude" @change="saveConfig()" placeholder="Longitude" class="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:opacity-30 tabular">
+                        </div>
+                    </div>
+                    <p class="text-[9px] opacity-50 uppercase tracking-widest text-center mt-2">Pings Open-Meteo every 15m. Saves automatically.</p>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="activePanel === 'notifications'">
+        <div class="space-y-6 transform-gpu" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+            <h3 class="section-header">Notifications & Alerts</h3>
+
+            <div class="flex gap-6 border-b border-black/5 dark:border-white/5 mb-6">
+                <button @click="notifTab = 'settings'" :class="notifTab === 'settings' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'opacity-40 border-transparent'" class="pb-2 text-sm font-bold border-b-2 transition-all">Settings</button>
+                <button @click="notifTab = 'history'" :class="notifTab === 'history' ? 'border-teal-500 text-teal-600 dark:text-teal-400' : 'opacity-40 border-transparent'" class="pb-2 text-sm font-bold border-b-2 transition-all">History</button>
+            </div>
+
+            <div x-show="notifTab === 'settings'" class="space-y-6 soft-fade-in">
+                <div class="flex items-center justify-between p-4 neo-in border border-teal-500/30">
+                    <div>
+                        <p class="font-bold text-sm">Enable Threshold Alerts</p>
+                        <p class="text-[10px] opacity-60 mt-1">Notify when AQI > <span class="font-bold text-teal-500" x-text="config.alert_threshold"></span></p>
+                    </div>
+                    <div @click="config.alerts_enabled = !config.alerts_enabled; saveConfig()" class="w-12 h-6 rounded-full cursor-pointer transition-colors relative" :class="config.alerts_enabled ? 'bg-teal-500' : 'bg-black/20 dark:bg-white/20'">
+                        <div class="w-4 h-4 bg-white rounded-full absolute top-1 transition-transform" :class="config.alerts_enabled ? 'translate-x-7' : 'translate-x-1'"></div>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-sm font-bold block ml-2">Telegram Bot Token</label>
+                    <div class="neo-in p-1">
+                        <input type="password" x-model="config.telegram_token" placeholder="Paste HTTP API token..." class="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:opacity-30 tabular">
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-sm font-bold block ml-2">Default Chat ID</label>
+                    <div class="neo-in p-1">
+                        <input type="text" x-model="config.telegram_chat_id" placeholder="Your User ID..." class="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:opacity-30 tabular">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 pt-4">
+                    <button @click="saveConfig()" class="p-4 rounded-2xl bg-indigo-600 text-white font-bold shadow-lg hover:bg-indigo-700 active:scale-95 transition-all">Save Config</button>
+                    <button @click="testAlert()" class="p-4 neo-in font-bold hover:bg-black/5 dark:hover:bg-white/5 active:scale-95 transition-all">Send Test</button>
+                </div>
+                <p class="text-[10px] text-center opacity-50 font-medium italic">Open your bot in Telegram and type <span class="font-bold">/start</span> to verify connection.</p>
+            </div>
+
+            <div x-show="notifTab === 'history'" class="space-y-3 soft-fade-in">
+                <template x-if="alertHistory.length === 0">
+                    <div class="p-8 text-center opacity-40"><p class="text-xs font-bold">No alerts triggered yet.</p></div>
+                </template>
+                <template x-for="(log, i) in alertHistory" :key="i">
+                    <div class="p-4 neo-in flex justify-between items-center">
+                        <div>
+                            <p class="text-xs font-bold" x-text="log.msg"></p>
+                            <p class="text-[9px] opacity-40 uppercase font-black tabular" x-text="log.time"></p>
+                        </div>
+                        <span class="text-[10px] font-black" :class="log.type === 'Error' ? 'text-red-500' : 'text-teal-500'" x-text="log.type"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="activePanel === 'logs'">
+        <div class="space-y-6 transform-gpu" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+            <h3 class="section-header">AtmosLog Manager</h3>
+
+            <div>
+                <div class="flex justify-between text-[10px] font-black uppercase mb-2"><span>Disk Storage</span><span x-text="storageStr"></span></div>
+                <div class="w-full h-3 neo-in overflow-hidden relative"><div class="h-full bg-teal-500 transition-all duration-1000" :style="'width: ' + storagePercent + '%'"></div></div>
+            </div>
+
+            <div class="neo-in p-6 space-y-4">
+                <span class="label">Select Log Date</span>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="relative"><select x-model="selectedYear" @change="updateMonthList()" class="w-full bg-transparent border-b border-black/10 dark:border-white/10 pb-2 text-sm font-bold outline-none cursor-pointer"><option value="" disabled selected>YYYY</option><template x-for="y in availableYears" :key="y"><option :value="y" x-text="y"></option></template></select></div>
+                    <div class="relative"><select x-model="selectedMonth" @change="updateDayList()" :disabled="!selectedYear" class="w-full bg-transparent border-b border-black/10 dark:border-white/10 pb-2 text-sm font-bold outline-none cursor-pointer disabled:opacity-30"><option value="" disabled selected>MM</option><template x-for="m in availableMonths" :key="m"><option :value="m" x-text="m"></option></template></select></div>
+                    <div class="relative"><select x-model="selectedDay" :disabled="!selectedMonth" class="w-full bg-transparent border-b border-black/10 dark:border-white/10 pb-2 text-sm font-bold outline-none cursor-pointer disabled:opacity-30"><option value="" disabled selected>DD</option><template x-for="d in availableDays" :key="d"><option :value="d" x-text="d"></option></template></select></div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 pt-2">
+                    <button @click="deleteLog()" :disabled="!selectedDay" class="px-2 py-2 text-xs font-bold text-red-500 uppercase tracking-wider hover:bg-red-500/10 rounded transition-all disabled:opacity-30">Delete</button>
+                    <button @click="downloadLog()" :disabled="!selectedDay" class="neo-in px-2 py-2 text-xs font-bold text-teal-600 dark:text-teal-400 hover:bg-teal-500/10 transition-all disabled:opacity-30">Download</button>
+                    <button @click="previewLog()" :disabled="!selectedDay" class="neo-in px-2 py-2 text-xs font-black bg-teal-500 text-white shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100 disabled:shadow-none disabled:bg-gray-400">Preview</button>
+                </div>
+            </div>
+
+            <div x-show="previewData.length > 0" x-transition class="space-y-6">
+                <div class="flex justify-between items-center">
+                    <span class="label text-teal-600 dark:text-teal-400" x-text="`Historical Analysis: ${selectedYear}-${selectedMonth}-${selectedDay}`"></span>
+                    <button @click="previewData = []; dailyGraphData = {aqi:[], temp:[], hum:[], pm25:[]}" class="text-[10px] font-bold opacity-50 hover:opacity-100 uppercase">Close View</button>
+                </div>
+
+                <div x-show="dailyGraphData.aqi && dailyGraphData.aqi.length > 0" class="neo-in p-6">
+                    <div class="flex justify-between items-end mb-4">
+                        <div><p class="label mb-1">24-Hour AQI Trend</p><p class="text-[10px] opacity-60">Time-Synced Projection</p></div>
+                        <div class="flex gap-4 text-right">
+                            <div><p class="text-[9px] uppercase font-bold opacity-50">Peak</p><p class="text-sm font-black text-red-500" x-text="historicalStats.aqi.max.toFixed(0)"></p></div>
+                            <div><p class="text-[9px] uppercase font-bold opacity-50">Low</p><p class="text-sm font-black text-teal-500" x-text="historicalStats.aqi.min.toFixed(0)"></p></div>
+                        </div>
+                    </div>
+                    <div class="w-full h-32 relative overflow-visible border-b border-l border-black/10 dark:border-white/10 pb-1 pl-1 cursor-crosshair" @mousemove="handleHover($event, dailyGraphData.aqi, 'log_aqi')" @mouseleave="showHover = false; hoverGraph = null">
+                        <svg viewBox="0 0 100 40" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible">
+                            <polyline :points="generateDailySvg(dailyGraphData.aqi)" fill="none" stroke="#2dd4bf" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <line x1="0" y1="0" x2="0" y2="40" class="transition-all duration-75" stroke="currentColor" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1" x-show="showHover && hoverGraph === 'log_aqi'" :transform="`translate(${hoverPct}, 0)`" />
+                            <circle r="1.5" fill="#2dd4bf" class="transition-all duration-75" x-show="showHover && hoverGraph === 'log_aqi'" :cx="hoverPct" :cy="getHoverY(dailyGraphData.aqi)" />
+                        </svg>
+                        <div x-show="showHover && hoverGraph === 'log_aqi'" class="absolute top-0 transform -translate-x-1/2 -translate-y-[110%] bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-2 py-1 rounded shadow-lg pointer-events-none z-20 flex flex-col items-center transition-all duration-75 min-w-[40px]" :style="`left: ${hoverPct}%`">
+                            <span class="text-xs font-black tabular leading-none" x-text="dailyGraphData.aqi[hoverIndex]?.y.toFixed(0)"></span>
+                            <span class="text-[9px] opacity-70 font-mono mt-1 leading-none" x-text="formatHoverTime(hoverPct)"></span>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-[8px] font-bold opacity-40 uppercase tracking-wider mt-2 mb-4"><span>00:00</span><span>12:00</span><span>23:59</span></div>
+
+                    <div @click="showHistoricalGraphs = true" class="pt-3 border-t border-black/10 dark:border-white/10 cursor-pointer group flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 p-2 -mx-2 -mb-2 rounded-xl transition-all">
+                        <div class="flex flex-col text-left"><span class="text-[9px] font-black uppercase tracking-widest text-slate-800 dark:text-white group-hover:text-teal-500 transition-colors">Open Historical Telemetry</span><span class="text-[8px] opacity-50 font-sans mt-0.5 text-slate-600 dark:text-slate-400">View detailed 24-hour sensor arrays</span></div>
+                        <div class="w-12 h-5 relative opacity-40 group-hover:opacity-100 transition-opacity"><svg viewBox="0 0 100 20" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDailySvg(dailyGraphData.aqi)" fill="none" stroke="#2dd4bf" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                    </div>
+                </div>
+
+                <div class="neo-in p-0 overflow-hidden mt-6">
+                    <div class="max-h-[300px] overflow-auto custom-scroll">
+                        <table class="w-full table-auto text-left border-collapse">
+                            <thead class="bg-black/5 dark:bg-white/5 sticky top-0 backdrop-blur-sm z-10">
+                                <tr>
+                                    <template x-for="head in previewHeaders" :key="head">
+                                        <th class="p-3 text-[9px] font-black uppercase tracking-wider opacity-70 whitespace-nowrap"
+                                            :class="['Time', 'IAQ', 'AQI'].includes(head) ? 'w-[1%] pr-8' : 'w-auto'"
+                                            x-text="head"></th>
+                                    </template>
+                                </tr>
+                            </thead>
+                            <tbody class="text-xs font-mono">
+                                <template x-for="(row, idx) in previewData" :key="idx">
+                                    <tr class="border-b border-black/5 dark:border-white/5 last:border-0 hover:bg-teal-500/5 transition-colors">
+                                        <template x-for="head in previewHeaders" :key="head">
+                                            <td class="p-3 whitespace-nowrap"
+                                                :class="['Time', 'IAQ', 'AQI'].includes(head) ? 'w-[1%] pr-8' : 'w-auto'"
+                                                x-text="row[head]"></td>
+                                        </template>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="previewData.length === 0 && selectedDay" class="p-8 text-center opacity-40"><p class="text-xs font-bold">Click "Preview" to load data.</p></div>
+        </div>
+    </template>
+
+    <template x-if="activePanel === 'systemInfo'">
+        <div class="space-y-6 transform-gpu" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+            <h3 class="section-header">System Information</h3>
+
+            <div class="neo-in p-6 space-y-6">
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between"><span class="text-sm font-bold">Status</span><span class="status-badge" :class="connected ? 'status-good' : 'status-error'" x-text="connected ? 'Operational' : 'Disconnected'"></span></div>
+
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between p-3 bg-white/30 dark:bg-black/20 rounded-xl"><span class="text-xs font-medium opacity-80">CPU Usage</span><span class="text-xs font-bold tabular" x-text="sysInfo.cpu"></span></div>
+                        <div class="flex items-center justify-between p-3 bg-white/30 dark:bg-black/20 rounded-xl"><span class="text-xs font-medium opacity-80">Memory Usage</span><span class="text-xs font-bold tabular" x-text="sysInfo.memory"></span></div>
+                        <div class="flex items-center justify-between p-3 bg-white/30 dark:bg-black/20 rounded-xl"><span class="text-xs font-medium opacity-80">Uptime</span><span class="text-xs font-bold tabular" x-text="sysInfo.uptime"></span></div>
+                        <div class="flex items-center justify-between p-3 bg-white/30 dark:bg-black/20 rounded-xl"><span class="text-xs font-medium opacity-80">Software Version</span><span class="text-xs font-bold" x-text="sysInfo.version"></span></div>
+                    </div>
+
+                    <div class="pt-4 border-t border-black/10 dark:border-white/10">
+                        <div class="flex items-center justify-between mb-3"><span class="label">Network Status</span><span class="status-badge" :class="connected ? 'status-good' : 'status-error'" x-text="connected ? 'Online' : 'Offline'"></span></div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span>WiFi SSID:</span><span class="font-bold tabular" x-text="sysInfo.ssid"></span></div>
+                            <div class="flex justify-between"><span>IP Address:</span><span class="font-bold text-teal-600 dark:text-teal-400 tabular" x-text="sysInfo.ip"></span></div>
+                            <div class="flex justify-between"><span>Signal:</span><span class="font-bold tabular" x-text="sysInfo.signal"></span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 pt-4">
+                    <button @click="refreshSystemInfo()" class="neo-in p-3 font-bold hover:bg-teal-500/10 active:scale-95 transition-all flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" :class="{'refresh-spin': refreshing}"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+</aside>
+
+<div class="max-w-6xl mx-auto space-y-6">
+
+    <header class="neo p-5 flex justify-between items-center">
+      <div>
+        <h1 class="h1-zenith uppercase text-slate-900 dark:text-white">AtmosEye</h1>
+        <p class="label mt-1">Smart Environmental Dashboard</p>
+      </div>
+      <div class="flex gap-3">
+        <button @click="toggleDark()" class="neo-in w-12 h-12 flex items-center justify-center theme-toggle-container hover:scale-105 active:scale-95 transition-transform" title="Toggle Theme">
+          <svg viewBox="0 0 24 24" class="sun-moon-svg"><mask id="moon-mask-header"><rect x="0" y="0" width="100%" height="100%" fill="white" /><circle class="moon-mask" cx="24" cy="10" r="6" fill="black" /></mask><circle cx="12" cy="12" r="5" fill="currentColor" mask="url(#moon-mask-header)" /><g class="sun-beams"><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></g></svg>
+        </button>
+        <button @click="menuOpen = true; activePanel = 'main'" class="neo-in w-12 h-12 flex items-center justify-center font-bold hover:scale-105 active:scale-95 transition-transform">☰</button>
+      </div>
+    </header>
+
+    <section class="neo p-8 sm:p-12 space-y-8">
+      <span class="section-header block text-teal-600 dark:text-teal-400">Indoor Air Situation</span>
+      <div class="flex flex-col md:flex-row gap-12 items-center">
+        <div class="text-center md:text-left flex-grow space-y-6 w-full">
+          <div>
+            <h2 class="text-6xl sm:text-8xl font-black uppercase tracking-tighter zenith-pulse h2-zenith text-teal-700 dark:text-teal-400" x-text="iaq.category"></h2>
+            <p class="mt-4 opacity-60 text-xl sm:text-2xl tabular font-bold tracking-tight" x-text="'Baseline: ' + iaq.range"></p>
+          </div>
+
+          <div class="neo-in p-6 mini-graph-container" :class="iaqTrend === 'Improving' ? 'text-teal-600 dark:text-teal-400' : 'text-orange-500'">
+            <div class="flex justify-between items-center mb-3">
+              <p class="label text-[9px]">LIVE AQI</p>
+              <p class="text-[9px] font-black uppercase transition-colors duration-500" x-text="iaqTrend"></p>
+            </div>
+
+            <div x-ref="trendChart" class="w-full h-16"></div>
+            <div class="flex justify-between mt-2 text-[8px] font-bold opacity-40 uppercase tracking-wider mb-4"><span>00:00</span><span>12:00</span><span>Now</span></div>
+
+            <div @click="showDetailedGraphs = true" class="pt-3 border-t border-black/10 dark:border-white/10 cursor-pointer group flex items-center justify-between hover:bg-black/5 dark:hover:bg-white/5 p-2 -mx-2 -mb-2 rounded-xl transition-all">
+                <div class="flex flex-col text-left"><span class="text-[9px] font-black uppercase tracking-widest text-slate-800 dark:text-white group-hover:text-teal-500 transition-colors">Open Deep Telemetry</span><span class="text-[8px] opacity-50 font-sans mt-0.5 text-slate-600 dark:text-slate-400">View 60-frame sensor arrays</span></div>
+                <div class="w-12 h-5 relative opacity-40 group-hover:opacity-100 transition-opacity"><svg viewBox="0 0 100 20" preserveAspectRatio="none" class="w-full h-full absolute inset-0 overflow-visible"><polyline :points="generateDetailSvg(history.pm25)" fill="none" stroke="#2dd4bf" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="neo-in p-8 text-center w-full max-w-xs space-y-4" :class="getAqiColor(aqi.value)">
+          <p class="label mb-2">AQI Concentration</p>
+          <div class="relative w-40 h-40 mx-auto">
+            <svg viewBox="0 0 100 100" class="radial-progress w-full h-full">
+              <defs><linearGradient id="aqiGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#14b8a6" /><stop offset="50%" style="stop-color:#f59e0b" /><stop offset="100%" style="stop-color:#ef4444" /></linearGradient></defs>
+              <circle class="radial-track" cx="50" cy="50" r="42" />
+              <circle class="radial-bar" cx="50" cy="50" r="42" stroke="url(#aqiGradient)" :stroke-dasharray="264" :stroke-dashoffset="264 - (264 * aqi.value / 300)" />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <p class="text-4xl font-black tabular" x-text="aqi.value"></p><p class="text-[9px] font-bold opacity-60 uppercase tracking-widest">/ 500</p>
+            </div>
+          </div>
+          <div>
+            <p class="text-sm font-bold opacity-80 uppercase tracking-widest" x-text="aqi.category"></p>
+            <div class="flex justify-center gap-1 mt-3 mb-6">
+              <div class="w-2 h-2 rounded-full bg-teal-500 transition-opacity duration-300" :class="aqi.value <= 50 ? 'opacity-100' : 'opacity-20'"></div>
+              <div class="w-2 h-2 rounded-full bg-yellow-500 transition-opacity duration-300" :class="aqi.value > 50 && aqi.value <= 100 ? 'opacity-100' : 'opacity-20'"></div>
+              <div class="w-2 h-2 rounded-full bg-orange-500 transition-opacity duration-300" :class="aqi.value > 100 && aqi.value <= 200 ? 'opacity-100' : 'opacity-20'"></div>
+              <div class="w-2 h-2 rounded-full bg-red-500 transition-opacity duration-300" :class="aqi.value > 200 ? 'opacity-100' : 'opacity-20'"></div>
+            </div>
+
+            <div class="mt-4 p-3 bg-white/40 dark:bg-black/20 rounded-xl border border-black/5 dark:border-white/5 flex justify-between items-center shadow-sm">
+                <div class="text-left">
+                    <p class="text-[9px] uppercase font-bold opacity-50">Outdoor</p>
+                    <p class="text-sm font-black tabular" x-text="outdoor.aqi ? outdoor.aqi + ' AQI' : 'Fetching...'"></p>
+                </div>
+                <div class="text-right">
+                    <p class="text-[9px] uppercase font-bold opacity-50 text-teal-600 dark:text-teal-400">Temp / PM2.5</p>
+                    <p class="text-xs font-bold tabular" x-text="outdoor.temperature ? outdoor.temperature + '° / ' + outdoor.pm25 + 'µg' : '...'"></p>
+                </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 items-start">
+        <div @click="toggleExpand('trend')" class="neo-in p-6 cursor-pointer transform-gpu transition-all duration-500" :class="[cards.trend.level === 'bad' ? 'tint-bad' : (cards.trend.level === 'warn' ? 'tint-warn' : 'tint-good'), expandedLabel === 'trend' ? 'sm:col-span-1 shadow-inner ring-2 ring-teal-500/20' : 'hover:translate-y-[-4px] text-center']">
+            <p class="label mb-2 text-center text-xs">Trend Engine</p>
+            <p class="text-3xl font-black text-center mt-2" x-text="cards.trend.direction"></p>
+            <div x-show="expandedLabel === 'trend'" x-collapse.duration.500ms class="mt-6 border-t border-black/10 dark:border-white/10 pt-4 font-mono text-xs space-y-3">
+                <div class="flex justify-between"><span>Direction</span><span class="font-bold" x-text="cards.trend.direction"></span></div>
+                <div class="flex justify-between"><span>FSM State</span><span class="font-bold text-teal-600 dark:text-teal-400" x-text="cards.trend.fsm"></span></div>
+                <div class="flex justify-between"><span>Δ (last 5m)</span><span x-text="cards.trend.roc"></span></div>
+                <div class="flex justify-between"><span>Volatility</span><span x-text="cards.trend.volatility"></span></div>
+                <div class="mt-3 pt-3 border-t border-black/5 dark:border-white/5"><p class="text-[10px] opacity-50 mb-1">RAW (DOTTED) VS SAVITZKY-GOLAY SMOOTH (TEAL)</p><div class="relative h-12 w-full overflow-hidden bg-black/5 dark:bg-white/5 rounded"><svg viewBox="0 0 100 30" preserveAspectRatio="none" class="w-full h-full absolute inset-0"><line x1="0" y1="15" x2="100" y2="15" stroke="rgba(239,68,68,0.5)" stroke-dasharray="2 2" stroke-width="0.5"/><polyline :points="generateSvgLine(cards.trend.raw_data)" fill="none" stroke="currentColor" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="2 2"/><polyline :points="generateSvgLine(cards.trend.smooth_data)" fill="none" stroke="#2dd4bf" stroke-width="1.5"/></svg></div></div><p class="text-[10px] opacity-40 text-center pt-2 uppercase tracking-widest font-sans">Tap card to collapse</p>
+            </div>
+            <p x-show="expandedLabel !== 'trend'" class="text-[10px] opacity-40 text-center font-sans uppercase font-black mt-4 tracking-[0.2em]">Logic Layer</p>
+        </div>
+
+        <div @click="toggleExpand('comfort')" class="neo-in p-6 cursor-pointer transform-gpu transition-all duration-500" :class="[cards.comfort.level === 'bad' ? 'tint-bad' : (cards.comfort.level === 'warn' ? 'tint-warn' : 'tint-good'), expandedLabel === 'comfort' ? 'sm:col-span-1 shadow-inner ring-2 ring-teal-500/20' : 'hover:translate-y-[-4px] text-center']">
+            <p class="label mb-2 text-center text-xs">Comfort</p>
+            <p class="text-3xl font-black text-center mt-2" x-text="cards.comfort.status"></p>
+            <div x-show="expandedLabel === 'comfort'" x-collapse.duration.500ms class="mt-6 border-t border-black/10 dark:border-white/10 pt-4 font-mono text-xs space-y-3">
+                <div class="flex justify-between items-center bg-white/20 dark:bg-black/20 p-2 rounded"><span>Index Score</span><span class="text-sm font-bold"><span x-text="cards.comfort.score"></span><span class="opacity-50 text-[10px]">/100</span></span></div>
+                <div class="flex flex-col gap-1 mt-2"><span class="opacity-50">Thermal Vector</span><span class="font-bold" x-text="cards.comfort.temp_zone"></span></div>
+                <div class="flex flex-col gap-1"><span class="opacity-50">Moisture Vector</span><span class="font-bold" x-text="cards.comfort.hum_zone"></span></div>
+                <div class="flex flex-col gap-1 border-t border-black/5 dark:border-white/5 pt-2"><span class="text-teal-600 dark:text-teal-400 font-bold uppercase tracking-wider text-[10px]">Suggested Action</span><span x-text="cards.comfort.action"></span></div><p class="text-[10px] opacity-40 text-center pt-2 uppercase tracking-widest font-sans">Tap card to collapse</p>
+            </div>
+            <p x-show="expandedLabel !== 'comfort'" class="text-[10px] opacity-40 text-center font-sans uppercase font-black mt-4 tracking-[0.2em]">Logic Layer</p>
+        </div>
+
+        <div @click="toggleExpand('gases')" class="neo-in p-6 cursor-pointer transform-gpu transition-all duration-500" :class="[cards.gases.level === 'bad' ? 'tint-bad' : (cards.gases.level === 'warn' ? 'tint-warn' : 'tint-good'), expandedLabel === 'gases' ? 'sm:col-span-1 shadow-inner ring-2 ring-teal-500/20' : 'hover:translate-y-[-4px] text-center']">
+            <p class="label mb-2 text-center text-xs">VOC / Gases</p>
+            <p class="text-3xl font-black text-center mt-2" x-text="cards.gases.activity"></p>
+            <div x-show="expandedLabel === 'gases'" x-collapse.duration.500ms class="mt-6 border-t border-black/10 dark:border-white/10 pt-4 font-mono text-xs space-y-3">
+                <div class="grid grid-cols-2 gap-2 text-center bg-white/20 dark:bg-black/20 p-2 rounded"><div class="flex flex-col"><span class="opacity-50">Resistance</span><span class="font-bold"><span x-text="cards.gases.current"></span> kΩ</span></div><div class="flex flex-col border-l border-black/10 dark:border-white/10"><span class="opacity-50">Baseline EMA</span><span class="font-bold"><span x-text="cards.gases.baseline"></span> kΩ</span></div></div>
+                <div class="flex justify-between items-center"><span>Deviation</span><span class="font-bold" :class="cards.gases.deviation < -10 ? 'text-red-500' : 'text-teal-500'" x-text="cards.gases.deviation + '%'"></span></div>
+                <div class="flex justify-between"><span>Array Stability</span><span x-text="cards.gases.stability"></span></div>
+                <div x-show="cards.gases.sudden" class="bg-red-500/10 text-red-600 dark:text-red-400 p-2 rounded border border-red-500/20 font-bold text-center mt-2 animate-pulse">Rapid Gas Variation Detected!</div><p class="text-[10px] opacity-40 text-center pt-2 uppercase tracking-widest font-sans">Tap card to collapse</p>
+            </div>
+            <p x-show="expandedLabel !== 'gases'" class="text-[10px] opacity-40 text-center font-sans uppercase font-black mt-4 tracking-[0.2em]">Logic Layer</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="neo p-8 md:p-10">
+      <span class="section-header block mb-6">Live Sensor Reading</span>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-5">
+        <template x-for="(v,k) in live" :key="k">
+          <div class="neo-in p-5 text-center transition-colors duration-700" :class="getSensorColor(k, v)">
+            <p class="label mb-1 opacity-50 uppercase" x-text="k"></p>
+            <p class="text-xl font-black tabular" x-text="k === 'temperature' ? formatTemp(v) : v"></p>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section class="neo p-8 md:p-10 soft-fade-in mb-10">
+      <div class="flex justify-between items-center mb-6">
+        <div class="flex items-center gap-3">
+          <span class="section-header text-teal-600 dark:text-teal-400">AtmosInsight Summary</span>
+          <span class="px-2 py-0.5 rounded text-[8px] font-black bg-teal-500/10 text-teal-600 uppercase tracking-widest">Live Analysis</span>
+        </div>
+        <button @click="refreshSummary()" class="neo-in p-3 hover:scale-110 active:scale-95 transition-all outline-none" title="Refresh Summary">
+          <svg viewBox="0 0 24 24" class="w-6 h-6 stroke-teal-600 dark:stroke-teal-400 fill-none stroke-[2] line-cap-round line-join-round" :class="{ 'refresh-spin': refreshing }"><path d="M3 12a9 9 0 0 1 15-6" /><path d="M21 12a9 9 0 0 1-15 6" /><path d="M18 3v5h-5" /><path d="M6 21v-5h5" /></svg>
+        </button>
+      </div>
+      <div class="relative min-h-[100px] flex items-center">
+          <div x-show="refreshing" x-transition:opacity class="absolute inset-0 flex items-center justify-center bg-white/20 dark:bg-slate-900/20 backdrop-blur-sm rounded-xl z-10"><span class="label animate-pulse">Recalculating...</span></div>
+          <div>
+              <p class="text-xl font-medium" x-text="trendSummary"></p>
+              <p class="text-sm font-bold text-teal-600 dark:text-teal-400 mt-2" x-show="recommendation" x-text="recommendation"></p>
+          </div>
+      </div>
+      <div class="mt-6 pt-6 border-t border-black/5 dark:border-white/5 flex flex-wrap gap-8">
+          <div class="flex flex-col"><span class="label text-[8px] mb-1">Tone</span><span class="text-xs font-bold tabular capitalize" x-text="settings.tone"></span></div>
+          <div class="flex flex-col"><span class="label text-[8px] mb-1">Last Sync</span><span class="text-xs font-bold tabular">Manual Request</span></div>
+      </div>
+    </section>
+
+</div>
+
+<script>
+function atmosEyeApp(){
+  return {
+    isDarkMode: false,
+    menuOpen: false,
+    activePanel: 'main',
+    expandedLabel: null,
+    refreshing: false,
+    notifTab: 'settings',
+    useFahrenheit: false,
+    storagePercent: 0,
+    storageStr: 'Loading...',
+    settings: { tone: 'professional' },
+    toasts: [],
+    connected: false,
+
+    // Hover Scrubber State
+    hoverGraph: null,
+    hoverIndex: null,
+    hoverPct: 0,
+    showHover: false,
+
+    config: { telegram_token: '', telegram_chat_id: '', alerts_enabled: false, alert_threshold: 100, latitude: '', longitude: '' },
+    alertHistory: [],
+
+    showDetailedGraphs: false,
+    history: { pm25: [], temp: [], hum: [], gas: [] },
+    showHistoricalGraphs: false,
+    dailyGraphData: { aqi: [], temp: [], hum: [], pm25: [] },
+    historicalStats: { aqi: {min: 0, max: 0}, temp: {min: 0, max: 0}, hum: {min: 0, max: 0}, pm25: {min: 0, max: 0} },
+
+    logStructure: {}, availableYears: [], availableMonths: [], availableDays: [],
+    selectedYear: '', selectedMonth: '', selectedDay: '', previewData: [], previewHeaders: [],
+
+    sysInfo: { cpu: '...', memory: '...', uptime: '...', version: 'v8.1-OpenMeteo', ip: '...', ssid: '...', signal: '...' },
+    live: { temperature: '...', humidity: '...', pressure: '...', pm1: '...', pm25: '...', pm10: '...' },
+    outdoor: { temperature: null, humidity: null, pm25: null, aqi: null, last_sync: '...' },
+    iaq: { category: 'Loading...', range: '...' },
+    iaqTrend: '...',
+    aqi: { value: 0, category: 'Loading...' },
+    tunnel: { enabled: false, url: '' },
+    trendSummary: 'Click refresh button to generate analysis...',
+    recommendation: '',
+    trendHistory: [],
+
+    cards: {
+        trend: { direction: '...', fsm: '...', roc: '...', volatility: '...', anomaly: '...', raw_data: [], smooth_data: [], level: 'good' },
+        comfort: { status: '...', score: 0, temp_zone: '...', hum_zone: '...', action: '...', level: 'good' },
+        gases: { activity: '...', current: 0, baseline: 0, deviation: 0, stability: '...', sudden: false, level: 'good' }
+    },
+
+    init(){
+      this.isDarkMode = localStorage.getItem('darkMode') === 'true';
+      for(let i=0; i<30; i++) this.trendHistory.push(0);
+      for(let i=0; i<60; i++) { this.history.pm25.push(0); this.history.temp.push(0); this.history.hum.push(0); this.history.gas.push(0); }
+      this.$nextTick(() => { this.initD3(); });
+      this.fetchConfig();
+      this.fetchSystemInfo();
+
+      const socket = io();
+
+      socket.on('connect', () => {
+          this.connected = true;
+          this.addToast('Connected', 'Live telemetry stream active', 'success');
+      });
+
+      socket.on('disconnect', () => {
+          this.connected = false;
+      });
+
+      socket.on('live_data', (data) => {
+          this.processLiveData(data);
+      });
+    },
+
+    // --- Hover Interactive Engine ---
+    handleHover(event, dataArray, graphName) {
+        if (!dataArray || dataArray.length === 0) return;
+        this.hoverGraph = graphName;
+        const rect = event.currentTarget.getBoundingClientRect();
+        let pct = ((event.clientX - rect.left) / rect.width) * 100;
+        if(pct < 0) pct = 0; if(pct > 100) pct = 100;
+
+        let closest = null, minDiff = 1000, closestIdx = 0;
+        for(let i=0; i<dataArray.length; i++) {
+            let diff = Math.abs(dataArray[i].x - pct);
+            if(diff < minDiff) { minDiff = diff; closest = dataArray[i]; closestIdx = i; }
+        }
+
+        if(closest) {
+            this.hoverPct = closest.x;
+            this.hoverIndex = closestIdx;
+            this.showHover = true;
+        }
+    },
+
+    formatHoverTime(pct) {
+        let totalSeconds = (pct / 100) * 86400;
+        let h = Math.floor(totalSeconds / 3600);
+        let m = Math.floor((totalSeconds % 3600) / 60);
+        return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+    },
+
+    getHoverY(dataArray) {
+        if(!dataArray || dataArray.length === 0 || this.hoverIndex === null || !dataArray[this.hoverIndex]) return 0;
+        let val = dataArray[this.hoverIndex].y;
+        let max = Math.max(...dataArray.map(d => d.y));
+        let min = Math.min(...dataArray.map(d => d.y));
+        if(max === min) { max += 1; min = Math.max(0, min - 1); }
+        let range = max - min;
+        let paddedMax = max + (range * 0.1);
+        let paddedMin = Math.max(0, min - (range * 0.1));
+        let paddedRange = paddedMax - paddedMin || 1;
+        return 40 - (((val - paddedMin) / paddedRange) * 40);
+    },
+    // -------------------------------
+
+    processLiveData(data) {
+        this.live = { temperature: data.sensors.temperature, humidity: data.sensors.humidity + '%', pressure: (data.sensors.pressure || 1012) + 'hPa', pm1: (data.sensors.pm1 || 0) + 'µg', pm25: data.sensors.pm25 + 'µg', pm10: (data.sensors.pm10 || 0) + 'µg' };
+        this.aqi = data.aqi || { value: 0, category: 'Init' };
+
+        if(data.outdoor && data.outdoor.aqi !== null) {
+            this.outdoor = {
+                temperature: data.outdoor.temperature,
+                humidity: data.outdoor.humidity,
+                pm25: data.outdoor.pm25,
+                aqi: data.outdoor.aqi,
+                last_sync: data.outdoor.last_sync
+            };
+        }
+
+        try {
+            const newValue = parseFloat(data.aqi.value);
+            if (!isNaN(newValue)) {
+                let isInit = this.trendHistory.every(v => v === 0);
+                if (isInit) { this.trendHistory = Array(30).fill(newValue); }
+                else { this.trendHistory.push(newValue); if(this.trendHistory.length > 30) this.trendHistory.shift(); }
+                this.updateD3();
+            }
+        } catch(e) {}
+
+        try {
+            let pm25_val = parseFloat(data.sensors.pm25) || 0;
+            let temp_val = parseFloat(data.sensors.temperature) || 0;
+            let hum_val = parseFloat(data.sensors.humidity) || 0;
+            let gas_val = data.sensors.gas_resistance ? (parseFloat(data.sensors.gas_resistance) / 1000) : 0;
+
+            let isHistInit = this.history.pm25.every(v => v === 0);
+            if(isHistInit && pm25_val !== 0) {
+                this.history.pm25 = Array(60).fill(pm25_val); this.history.temp = Array(60).fill(temp_val); this.history.hum = Array(60).fill(hum_val); this.history.gas = Array(60).fill(gas_val);
+            } else if (!isHistInit) {
+                this.history.pm25.push(pm25_val); this.history.pm25.shift(); this.history.temp.push(temp_val); this.history.temp.shift(); this.history.hum.push(hum_val); this.history.hum.shift(); this.history.gas.push(gas_val); this.history.gas.shift();
+            }
+        } catch(e) {}
+
+        try {
+            let t = data.trend || {};
+            let dir = t.trend_direction || 'Stable';
+            this.iaqTrend = dir;
+            this.cards.trend = { direction: dir, fsm: t.fsm_state || 'NORMAL', roc: (t.roc > 0 ? '+' : '') + (t.roc || 0) + ' µg/m³', volatility: t.vol_level || 'Low', anomaly: t.anomaly || 'No anomaly', raw_data: t.raw_pm || [], smooth_data: t.smooth_pm || [], level: dir.includes('Worsening') ? 'bad' : 'good' };
+
+            let c = t.comfort || {};
+            let c_lvl = 'good';
+            if(c.level === 'Hot' || c.level === 'Cold') c_lvl = 'warn';
+            if(c.level === 'Uncomfortable') c_lvl = 'bad';
+            this.cards.comfort = { status: c.level || 'Nominal', score: c.score || 0, temp_zone: c.temp_zone || '...', hum_zone: c.hum_zone || '...', action: c.action || '...', level: c_lvl };
+
+            let g = t.gases || {};
+            let g_lvl = 'good';
+            if(g.level === 'Moderate') g_lvl = 'warn';
+            if(g.level === 'High' || g.level === 'Elevated') g_lvl = 'bad';
+            this.cards.gases = { activity: g.level || 'Unknown', current: g.current || 0, baseline: g.baseline || 0, deviation: g.deviation || 0, stability: g.stability || '...', sudden: g.sudden || false, level: g_lvl };
+        } catch (cardErr) {}
+
+        if(this.aqi.value <= 50) { this.iaq.category = 'Excellent'; this.iaq.range = '0-50'; }
+        else if (this.aqi.value <= 100) { this.iaq.category = 'Okay'; this.iaq.range = '51-100'; }
+        else { this.iaq.category = 'Poor'; this.iaq.range = '>100'; }
+
+        if(data.system?.tunnel) { this.tunnel.enabled = true; this.tunnel.url = data.system.tunnel; }
+        else { this.tunnel.enabled = false; this.tunnel.url = ''; }
+    },
+
+    async fetchConfig() {
+        try {
+            const res = await fetch('/api/settings');
+            if(res.ok) {
+                const data = await res.json();
+                Object.assign(this.config, data);
+            }
+        } catch(e) { console.error("Config load failed."); }
+    },
+
+    async saveConfig() {
+        try {
+            const res = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.config)
+            });
+            if(res.ok) {
+                this.addToast('Saved', 'Configuration updated securely.');
+            } else {
+                throw new Error("Save failed");
+            }
+        } catch(e) { this.addToast('Error', 'Failed to save configuration.', 'error'); }
+    },
+
+    async testAlert() {
+        await this.saveConfig();
+        this.addToast('Testing...', 'Contacting Telegram API...');
+        try {
+            const res = await fetch('/api/control/test_alert', { method: 'POST' });
+            const data = await res.json();
+
+            if(res.ok) {
+                if(data.chat_id && this.config.telegram_chat_id !== data.chat_id) {
+                    this.config.telegram_chat_id = data.chat_id;
+                    this.addToast('Discovered', 'Auto-filled your Chat ID!');
+                }
+                this.addToast('Success', 'Test alert delivered!');
+                this.alertHistory.unshift({ time: new Date().toLocaleTimeString(), msg: "Test Alert Delivered", type: "Success" });
+            } else {
+                this.addToast('Failed', data.error || 'Check Token and Chat ID.', 'error');
+                this.alertHistory.unshift({ time: new Date().toLocaleTimeString(), msg: data.error || "Delivery Failed", type: "Error" });
+            }
+        } catch(e) { this.addToast('Error', 'Network request failed.', 'error'); }
+    },
+
+    async fetchLogs() {
+        try {
+            const res = await fetch('/api/logs/structure');
+            const data = await res.json();
+            this.logStructure = data.structure;
+            this.availableYears = Object.keys(this.logStructure).sort().reverse();
+            if(data.storage) {
+                this.storagePercent = data.storage.percent;
+                this.storageStr = `${data.storage.used_gb} GB used / ${data.storage.total_gb} GB total`;
+            }
+        } catch(e) {}
+    },
+
+    updateMonthList() {
+        this.selectedMonth = ''; this.selectedDay = ''; this.previewData = [];
+        this.dailyGraphData = { aqi: [], temp: [], hum: [], pm25: [] };
+        if (this.selectedYear && this.logStructure[this.selectedYear]) {
+            this.availableMonths = Object.keys(this.logStructure[this.selectedYear]).sort();
+        } else { this.availableMonths = []; }
+    },
+
+    updateDayList() {
+        this.selectedDay = ''; this.previewData = [];
+        this.dailyGraphData = { aqi: [], temp: [], hum: [], pm25: [] };
+        if (this.selectedYear && this.selectedMonth) {
+            this.availableDays = this.logStructure[this.selectedYear][this.selectedMonth].sort();
+        } else { this.availableDays = []; }
+    },
+
+    async previewLog() {
+        if(!this.selectedYear || !this.selectedMonth || !this.selectedDay) return;
+        try {
+            const res = await fetch(`/api/logs/view?year=${this.selectedYear}&month=${this.selectedMonth}&day=${this.selectedDay}`);
+            const json = await res.json();
+            if(json.error) throw new Error(json.error);
+            this.previewHeaders = json.headers;
+            this.previewData = json.data;
+
+            if (json.data && json.data.length > 0) {
+                let rAqi = json.data.map(r => parseFloat(r.AQI) || 0);
+                let rTemp = json.data.map(r => parseFloat(r.Temp) || 0);
+                let rHum = json.data.map(r => parseFloat(r.Humidity) || 0);
+                let rPm25 = json.data.map(r => parseFloat(r['PM2.5']) || 0);
+
+                this.historicalStats = {
+                    aqi: { min: Math.min(...rAqi), max: Math.max(...rAqi) },
+                    temp: { min: Math.min(...rTemp), max: Math.max(...rTemp) },
+                    hum: { min: Math.min(...rHum), max: Math.max(...rHum) },
+                    pm25: { min: Math.min(...rPm25), max: Math.max(...rPm25) }
+                };
+
+                let targetPoints = 300;
+                let step = Math.ceil(json.data.length / targetPoints);
+                let dsAqi = [], dsTemp = [], dsHum = [], dsPm25 = [];
+
+                for(let i=0; i<json.data.length; i+=step) {
+                    let chunk = json.data.slice(i, i+step);
+                    let timeStr = chunk[chunk.length-1].Time || "00:00:00";
+                    let parts = timeStr.split(':');
+                    let percentOfDay = ((parseInt(parts[0]) * 3600) + (parseInt(parts[1]) * 60) + parseInt(parts[2])) / 86400 * 100;
+
+                    dsAqi.push({x: percentOfDay, y: chunk.reduce((a,b) => a + (parseFloat(b.AQI)||0), 0) / chunk.length});
+                    dsTemp.push({x: percentOfDay, y: chunk.reduce((a,b) => a + (parseFloat(b.Temp)||0), 0) / chunk.length});
+                    dsHum.push({x: percentOfDay, y: chunk.reduce((a,b) => a + (parseFloat(b.Humidity)||0), 0) / chunk.length});
+                    dsPm25.push({x: percentOfDay, y: chunk.reduce((a,b) => a + (parseFloat(b['PM2.5'])||0), 0) / chunk.length});
+                }
+                this.dailyGraphData = { aqi: dsAqi, temp: dsTemp, hum: dsHum, pm25: dsPm25 };
+            } else {
+                this.dailyGraphData = { aqi: [], temp: [], hum: [], pm25: [] };
+            }
+
+            this.addToast('Loaded', `Viewing log for ${this.selectedDay}/${this.selectedMonth}`);
+        } catch(e) { this.addToast('Error', 'Could not load log file', 'error'); }
+    },
+
+    async deleteLog() {
+        if(!confirm("Are you sure you want to delete this log file?")) return;
+        const path = `${this.selectedYear}/${this.selectedMonth}/${this.selectedDay}.csv`;
+        try {
+            await fetch('/api/logs', { method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({files: [path]}) });
+            this.addToast('Deleted', 'Log file removed', 'success');
+            this.fetchLogs();
+            this.selectedDay = ''; this.previewData = [];
+            this.dailyGraphData = { aqi: [], temp: [], hum: [], pm25: [] };
+            this.updateMonthList();
+        } catch(e) { this.addToast('Error', 'Delete failed', 'error'); }
+    },
+
+    downloadLog() {
+        if(!this.selectedYear || !this.selectedMonth || !this.selectedDay) return;
+        const url = `/api/logs/download?year=${this.selectedYear}&month=${this.selectedMonth}&day=${this.selectedDay}`;
+        window.open(url, '_blank');
+        this.addToast('Downloading', `Retrieving log for ${this.selectedDay}/${this.selectedMonth}...`, 'success');
+    },
+
+    async refreshSummary() {
+        this.refreshing = true;
+        try {
+            const res = await fetch(`/api/insight/refresh?tone=${this.settings.tone}`);
+            const data = await res.json();
+            this.trendSummary = data.insight;
+            this.recommendation = data.recommendation;
+            let toneStr = this.settings.tone.charAt(0).toUpperCase() + this.settings.tone.slice(1);
+            this.addToast('Refreshed', `Analysis updated (${toneStr} tone)`);
+        } catch(e) {
+            this.addToast('Error', 'Failed to refresh insight', 'error');
+        } finally {
+            this.refreshing = false;
+        }
+    },
+
+    generateSvgLine(arr) {
+        if(!arr || arr.length === 0) return "";
+        let max = Math.max(...arr, 10); let min = Math.min(...arr, 0); let range = max - min === 0 ? 1 : max - min;
+        return arr.map((val, i) => { let x = (i / (arr.length - 1)) * 100; let y = 25 - (((val - min) / range) * 20); return `${x},${y}`; }).join(' ');
+    },
+
+    generateDetailSvg(arr) {
+        if(!arr || arr.length === 0) return "";
+        let max = Math.max(...arr); let min = Math.min(...arr); if(max === min) { max += 1; min = Math.max(0, min - 1); }
+        let range = max - min; let paddedMax = max + (range * 0.1); let paddedMin = Math.max(0, min - (range * 0.1)); let paddedRange = paddedMax - paddedMin || 1;
+        return arr.map((val, i) => { let x = (i / (arr.length - 1)) * 100; let y = 40 - (((val - paddedMin) / paddedRange) * 40); return `${x},${y}`; }).join(' ');
+    },
+
+    generateDailySvg(arr) {
+        if(!arr || arr.length === 0) return "";
+        let max = Math.max(...arr.map(d => d.y)); let min = Math.min(...arr.map(d => d.y)); if(max === min) { max += 1; min = Math.max(0, min - 1); }
+        let range = max - min; let paddedMax = max + (range * 0.1); let paddedMin = Math.max(0, min - (range * 0.1)); let paddedRange = paddedMax - paddedMin || 1;
+        return arr.map(d => { let x = d.x; let y = 40 - (((d.y - paddedMin) / paddedRange) * 40); return `${x},${y}`; }).join(' ');
+    },
+
+    initD3() {
+        const el = this.$refs.trendChart;
+        if (!el) return;
+        const width = el.clientWidth || 300; const height = el.clientHeight || 64;
+        d3.select(el).selectAll("svg").remove();
+        this.svg = d3.select(el).append("svg").attr("width", "100%").attr("height", "100%").attr("viewBox", `0 0 ${width} ${height}`).style("overflow", "hidden");
+        this.pathLine = this.svg.append("path").attr("class", "graph-line").attr("fill", "none").attr("stroke", "currentColor").attr("stroke-width", 2.5).attr("stroke-linecap", "round");
+        this.updateD3();
+        window.addEventListener('resize', () => this.updateD3());
+    },
+
+    updateD3() {
+       if (!this.pathLine) return;
+       const data = [...this.trendHistory]; const el = this.$refs.trendChart; const width = el.clientWidth || 300; const height = el.clientHeight || 64;
+       this.svg.attr("viewBox", `0 0 ${width} ${height}`);
+       const paddingX = 2; const x = d3.scaleLinear().domain([0, data.length - 1]).range([paddingX, width - paddingX]);
+       const currentMax = Math.max(...data); const currentMin = Math.min(...data);
+       let yMax = currentMax; let yMin = currentMin;
+       if (currentMax === currentMin) { yMax = currentMax + 10; yMin = Math.max(0, currentMin - 10); }
+       else { const range = currentMax - currentMin; yMax = currentMax + (range * 0.2); yMin = Math.max(0, currentMin - (range * 0.2)); }
+       const y = d3.scaleLinear().domain([yMin, yMax]).range([height - 3, 3]);
+       const line = d3.line().x((d, i) => x(i)).y(d => y(d)).curve(d3.curveMonotoneX);
+       this.pathLine.datum(data).attr("d", line);
+    },
+
+    async fetchSystemInfo() { try { const res = await fetch('/api/system/info'); if(res.ok) this.sysInfo = await res.json(); } catch(e){} },
+    refreshSystemInfo() { this.refreshing = true; this.fetchSystemInfo().then(() => { this.refreshing = false; this.addToast('System', 'Updated'); }); },
+    toggleDark(){ this.isDarkMode = !this.isDarkMode; localStorage.setItem('darkMode', this.isDarkMode); },
+    addToast(title, message, type = 'success') { const id = Date.now(); this.toasts.push({ id, title, message, type }); setTimeout(() => { this.toasts = this.toasts.filter(t => t.id !== id); }, 3000); },
+    toggleExpand(label) { this.expandedLabel = this.expandedLabel === label ? null : label; },
+    toggleTunnel() {
+        const action = this.tunnel.enabled ? 'stop' : 'start'; this.tunnel.enabled = !this.tunnel.enabled;
+        if(this.tunnel.enabled) this.tunnel.url = "Requesting...";
+        fetch('/api/control/tunnel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({action}) });
+    },
+    formatTemp(c) { let val = parseFloat(c); if(isNaN(val)) return '...'; if(!this.useFahrenheit) return val.toFixed(1) + '°C'; return ((val * 9/5) + 32).toFixed(1) + '°F'; },
+    getAqiColor(val) { return val <= 50 ? 'tint-good' : (val <= 100 ? 'tint-warn' : 'tint-bad'); },
+    getSensorColor(key, valStr) { if(valStr === '...') return ''; let val = parseFloat(valStr); if(key.includes('pm')) return val <= 30 ? 'bg-teal-500/5' : (val <= 60 ? 'bg-yellow-500/5' : 'bg-red-500/5'); return ''; }
+  }
+}
+</script>
+</body>
+</html>
